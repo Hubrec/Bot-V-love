@@ -7,6 +7,15 @@ import time
 
 load_dotenv()
 
+# Logger setup
+if not os.path.exists("logs"):
+    os.mkdir("logs")
+
+def log(msg):
+    logFile = open("logs/bot.log", "a")
+    logFile.write(f'{int(time.time())} : {msg}\n')
+    logFile.close()
+
 # Bot Prefix
 
 description = '''Bot de gestion des stations velovs de Lyon'''
@@ -51,10 +60,12 @@ def fetchData():
 
 listeData = fetchData()
 
+# function that returns the data or update it if it's been more than 60 seconds
 def updateData():
     global clock
     global listeData
     if int(time.time()) - clock >= 60:
+        log('Data updated')
         clock = int(time.time())
         listeData = fetchData()
     return listeData
@@ -78,22 +89,6 @@ def getCoords():
 # Favorite storage
 
 favorite = {}
-coordsUsers = {}
-
-def addCrds(user, name, crds):
-    if user not in coordsUsers:
-        coordsUsers[user] = {}
-    if name in coordsUsers[user]:
-        return False
-    coordsUsers[user][name] = crds
-    return True
-
-def removeCrds(user):
-    if user not in coordsUsers:
-        return False
-    coordsUsers[user].clear()
-    coordsUsers.pop(user)
-    return True
 
 def addToFavorite(station, user):
     if user not in favorite:
@@ -114,12 +109,32 @@ def removeFromFavorite(station, user):
     return False
 
 def updateFavorite():
+    log('Favorite updated')
     for k in listeData:
         for user in favorite:
             for station in favorite[user]:
                 if station["nom"] == k["nom"]:
                     station["nbVelo"] = k["nbVelo"]
                     station["nbPlace"] = k["nbPlace"]
+
+# Coords storage
+
+coordsUsers = {}
+
+def addCrds(user, name, crds):
+    if user not in coordsUsers:
+        coordsUsers[user] = {}
+    if name in coordsUsers[user]:
+        return False
+    coordsUsers[user][name] = crds
+    return True
+
+def removeCrds(user):
+    if user not in coordsUsers:
+        return False
+    coordsUsers[user].clear()
+    coordsUsers.pop(user)
+    return True
 
 # Velovs Data Calculs
 
@@ -157,6 +172,7 @@ def getclosestStations(data, lat, lon):
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     print('------')
+    log(f'Logged in as {bot.user} (ID: {bot.user.id})')
 
 # Bot Commands
 
@@ -172,6 +188,7 @@ async def ping(ctx):
 # help command
 @bot.command()
 async def aide(ctx):
+    log(f'{ctx.author} asked for help')
     embed = discord.Embed(title="Voici la liste de mes compétences : ", color=BLUE)
     embed.add_field(name="!ping", value="Je réponds pong!", inline=False)
     embed.add_field(name="!aide", value="Je vous envoie cette liste", inline=False)
@@ -193,6 +210,7 @@ async def aide(ctx):
 @bot.command()
 async def rand(ctx, arg):
     listeData = updateData()
+    log(f'{ctx.author} asked for {arg} random stations')
     cpt = 0
     arg = int(arg)
     if arg > 20:
@@ -210,6 +228,7 @@ async def rand(ctx, arg):
 # all command that returns a list of 20 velov stations
 @bot.command()
 async def all(ctx):
+    log(f'{ctx.author} asked for all stations (20 random stations)')
     listeData = updateData()
     cpt = 0
     random.shuffle(listeData)
@@ -227,6 +246,7 @@ async def station(ctx, arg, arg2=None, arg3=None, arg4=None):
     listeData = updateData()
     arg = concat(arg, arg2, arg3, arg4)
     arg = str(arg).upper()
+    log(f'{ctx.author} asked for station {arg}')
     found = False
     response = []
     for k in listeData :
@@ -256,6 +276,7 @@ async def add(ctx, arg, arg2=None, arg3=None, arg4=None):
     listeData = updateData()
     arg = concat(arg, arg2, arg3, arg4)
     arg = str(arg).upper()
+    log(f'{ctx.author} asked to add station {arg} to his favorites')
     found = False
     response = []
     for k in listeData :
@@ -295,6 +316,7 @@ async def remove(ctx, arg, arg2=None, arg3=None, arg4=None):
     user = ctx.message.author.id
     arg = concat(arg, arg2, arg3, arg4)
     arg = str(arg).upper()
+    log(f'{ctx.author} asked to remove station {arg} from his favorites')
     found = False
     if len(favorite) == 0:
         embed = discord.Embed(title="Oops :/", description="Aucune station n'est dans vos favoris", color=RED)
@@ -314,6 +336,7 @@ async def remove(ctx, arg, arg2=None, arg3=None, arg4=None):
 @bot.command()
 async def fav(ctx):
     updateFavorite()
+    log(f'{ctx.author} asked for his favorites')
     user = ctx.message.author.id
     if len(favorite) == 0:
         embed = discord.Embed(title="Oops :/", description="Votre liste de favoris est vide !", color=RED)
@@ -324,8 +347,10 @@ async def fav(ctx):
             embed.add_field(name="Station n°" + str(k["numero"]) + ' - ' + k["nom"], value="*Vélos disponibles* : " + str(k["nbVelo"]) + "\n" + "*Places disponibles* : " + str(k["nbPlace"]), inline=False)
     await ctx.send(embed = embed)
 
+# addCoords command that add a coords to the favorite list
 @bot.command()
 async def addCoords(ctx, name, lat, lon):
+    log(f'{ctx.author} asked to add coords {name} : {lat}, {lon} to his favorites')
     user = ctx.message.author.id
     lat = float(lat)
     lon = float(lon)
@@ -341,8 +366,10 @@ async def addCoords(ctx, name, lat, lon):
         embed = discord.Embed(title="Oops :/", description="Vous avez déjà des coordonnées avec ce nom", color=RED)
         await ctx.send(embed = embed)
 
+# removeCoords command that remove the coords from the favorite list
 @bot.command()
 async def removeCoords(ctx):
+    log(f'{ctx.author} asked to remove his coords')
     user = ctx.message.author.id
     if removeCrds(user):
         embed = discord.Embed(title="Coordonnées supprimées", color=GREEN)
@@ -351,8 +378,10 @@ async def removeCoords(ctx):
         embed = discord.Embed(title="Oops :/", description="Vous n'avez pas de coordonnées enregistrées", color=RED)
         await ctx.send(embed = embed)
 
+# coords command that returns the coords list
 @bot.command()
 async def coords(ctx):
+    log(f'{ctx.author} asked for his coords')
     user = ctx.message.author.id
     if user in coordsUsers:
         embed = discord.Embed(title="Coordonnées enregistrées", color=BLUE)
@@ -362,9 +391,11 @@ async def coords(ctx):
         embed = discord.Embed(title="Oops :/", description="Vous n'avez pas de coordonnées enregistrées", color=RED)
     await ctx.send(embed = embed)
 
+ # search command that returns the closest stations to the coords given in argument
 @bot.command()
 async def search(ctx, lat=None, lon=None):
     listeData = updateData()
+    log(f'{ctx.author} asked to search for stations near {lat}, {lon}')
     if str(lat) == "here" or str(lon) == "here":
         location = getCoords()
         if isinstance(location, discord.Embed):
@@ -401,6 +432,7 @@ async def search(ctx, lat=None, lon=None):
 @bot.command()
 async def update(ctx):
     listeData = updateData()
+    log(f'{ctx.author} asked for the update of the data')
     if (int(time.time()) - clock) < 1:
         text = "Plus de 60 secondes => mise à jour des données"
     else:
