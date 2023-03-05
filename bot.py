@@ -53,11 +53,11 @@ listeData = fetchData()
 
 def updateData():
     global clock
+    global listeData
     if int(time.time()) - clock >= 60:
         clock = int(time.time())
-        return fetchData()
-    else:
-        return listeData
+        listeData = fetchData()
+    return listeData
 
 # api localisation requests / data fetching
 
@@ -77,21 +77,49 @@ def getCoords():
 
 # Favorite storage
 
-favorite = []
+favorite = {}
+coordsUsers = {}
 
-def addToFavorite(station):
-    for k in favorite:
-        if k["nom"] == station["nom"]:
-            return False
-    favorite.append(station)
+def addCrds(user, name, crds):
+    if user not in coordsUsers:
+        coordsUsers[user] = {}
+    if name in coordsUsers[user]:
+        return False
+    coordsUsers[user][name] = crds
     return True
 
-def removeFromFavorite(station):
-    for k in favorite:
+def removeCrds(user):
+    if user not in coordsUsers:
+        return False
+    coordsUsers[user].clear()
+    coordsUsers.pop(user)
+    return True
+
+def addToFavorite(station, user):
+    if user not in favorite:
+        favorite[user] = []
+    for k in favorite[user]:
         if k["nom"] == station["nom"]:
-            favorite.remove(k)
+            return False
+    favorite[user].append(station)
+    return True
+
+def removeFromFavorite(station, user):
+    if user not in favorite:
+        return False
+    for k in favorite[user]:
+        if k["nom"] == station["nom"]:
+            favorite[user].remove(k)
             return True
     return False
+
+def updateFavorite():
+    for k in listeData:
+        for user in favorite:
+            for station in favorite[user]:
+                if station["nom"] == k["nom"]:
+                    station["nbVelo"] = k["nbVelo"]
+                    station["nbPlace"] = k["nbPlace"]
 
 # Velovs Data Calculs
 
@@ -154,7 +182,10 @@ async def aide(ctx):
     embed.add_field(name="!add <STRING>", value="J'ajoute la station correspondant à votre recherche à vos favoris", inline=False)
     embed.add_field(name="!remove <STRING>", value="Je retire la station correspondant à votre recherche de vos favoris", inline=False)
     embed.add_field(name="!fav", value="Je vous envoie les informations de vos stations favorites", inline=False)
-    embed.add_field(name="!search <LAD> <LON>", value="Renvoi les 5 stations les plus proches des coordonnées entrées (possibilité de rechercher avec le texte \"here\" pour automatiquement trouver les plus proches (utilisation de l'ip du reseau))", inline=False)
+    embed.add_field(name="!addCoords <STRING> <LAD> <LON>", value="J'ajoute les coordonnées entrées à votre liste de coordonnées", inline=False)
+    embed.add_field(name="!removeCoords", value="Je retire toutes vos coordonnées de votre liste de coordonnées", inline=False)
+    embed.add_field(name="!coords", value="Je vous envoie la liste de vos coordonnées enregistrées", inline=False)
+    embed.add_field(name="!search <LAD> <LON>", value="Renvoi les 5 stations les plus proches des coordonnées entrées, vous pouvez aussi entrer a la place des coordonnées le nom d'une de vos addresses enregistrées ou bien encore écrire \"here\" pour rechercher les stations les plus proches de la ou votre réseau émet", inline=False)
     embed.add_field(name="!update", value="Je vous renvoi un panneau d'informations de l'état du réseau et *refresh* les données (fait automatiquement toutes les 60 secondes)", inline=False)
     await ctx.send(embed = embed)
 
@@ -221,6 +252,7 @@ async def station(ctx, arg, arg2=None, arg3=None, arg4=None):
 # add command that add a velov station to the favorite list
 @bot.command()
 async def add(ctx, arg, arg2=None, arg3=None, arg4=None):
+    user = ctx.message.author.id
     listeData = updateData()
     arg = concat(arg, arg2, arg3, arg4)
     arg = str(arg).upper()
@@ -248,7 +280,7 @@ async def add(ctx, arg, arg2=None, arg3=None, arg4=None):
         await ctx.send(embed = embed)
     else:
         for k in response:
-            if addToFavorite(k):
+            if addToFavorite(k, user):
                 embed = discord.Embed(title="Station n°" + str(k["numero"]) + ' - ' + k["nom"] + " ajoutée aux favoris", color=GREEN)
             else :
                 embed = discord.Embed(title="Station n°" + str(k["numero"]) + ' - ' + k["nom"] + " est déjà dans les favoris", color=RED)
@@ -260,6 +292,7 @@ async def add(ctx, arg, arg2=None, arg3=None, arg4=None):
 # delete command that delete a velov station from the favorite list
 @bot.command()
 async def remove(ctx, arg, arg2=None, arg3=None, arg4=None):
+    user = ctx.message.author.id
     arg = concat(arg, arg2, arg3, arg4)
     arg = str(arg).upper()
     found = False
@@ -269,7 +302,7 @@ async def remove(ctx, arg, arg2=None, arg3=None, arg4=None):
     else:
         for k in favorite :
             if arg in k["nom"]:
-                if removeFromFavorite(k):
+                if removeFromFavorite(k, user):
                     embed = discord.Embed(title="Station n°" + str(k["numero"]) + ' - ' + k["nom"] + " retirée des favoris", color=GREEN)
                     found = True
                     await ctx.send(embed = embed)
@@ -277,18 +310,56 @@ async def remove(ctx, arg, arg2=None, arg3=None, arg4=None):
             embed = discord.Embed(title="Oops :/", description="Aucune station dans vos favoris ne correspond à votre recherche", color=RED)
             await ctx.send(embed = embed)
 
-        
-
 # fav command that returns the favorite list
 @bot.command()
 async def fav(ctx):
+    updateFavorite()
+    user = ctx.message.author.id
     if len(favorite) == 0:
         embed = discord.Embed(title="Oops :/", description="Votre liste de favoris est vide !", color=RED)
         embed.add_field(name="Tip", value="Vous pouvez en ajouter avec la commande !add <nom de la station>", inline=False)
     else :
         embed = discord.Embed(title="Liste des stations favorites", color=BLUE)
-        for k in favorite :
+        for k in favorite[user] :
             embed.add_field(name="Station n°" + str(k["numero"]) + ' - ' + k["nom"], value="*Vélos disponibles* : " + str(k["nbVelo"]) + "\n" + "*Places disponibles* : " + str(k["nbPlace"]), inline=False)
+    await ctx.send(embed = embed)
+
+@bot.command()
+async def addCoords(ctx, name, lat, lon):
+    user = ctx.message.author.id
+    lat = float(lat)
+    lon = float(lon)
+    if not isinstance(lat, float) or not isinstance(lon, float):
+        embed = discord.Embed(title="Oops :/", description="Latitude et longitude doivent être des coordonnées", color=RED)
+        await ctx.send(embed = embed)
+        return
+    crds = [lat, lon]
+    if addCrds(user, name, crds):
+        embed = discord.Embed(title="Coordonnées ajoutées", color=GREEN)
+        await ctx.send(embed = embed)
+    else:
+        embed = discord.Embed(title="Oops :/", description="Vous avez déjà des coordonnées avec ce nom", color=RED)
+        await ctx.send(embed = embed)
+
+@bot.command()
+async def removeCoords(ctx):
+    user = ctx.message.author.id
+    if removeCrds(user):
+        embed = discord.Embed(title="Coordonnées supprimées", color=GREEN)
+        await ctx.send(embed = embed)
+    else:
+        embed = discord.Embed(title="Oops :/", description="Vous n'avez pas de coordonnées enregistrées", color=RED)
+        await ctx.send(embed = embed)
+
+@bot.command()
+async def coords(ctx):
+    user = ctx.message.author.id
+    if user in coordsUsers:
+        embed = discord.Embed(title="Coordonnées enregistrées", color=BLUE)
+        for k in coordsUsers[user]:
+            embed.add_field(name=k, value="Latitude : " + str(coordsUsers[user][k][0]) + "\nLongitude : " + str(coordsUsers[user][k][1]), inline=False)
+    else:
+        embed = discord.Embed(title="Oops :/", description="Vous n'avez pas de coordonnées enregistrées", color=RED)
     await ctx.send(embed = embed)
 
 @bot.command()
@@ -302,14 +373,22 @@ async def search(ctx, lat=None, lon=None):
         else:
             lat = location[0]
             lon = location[1]
-    elif lat == None or lon == None:
-        embed = discord.Embed(title="Oops :/", description="Vous devez rentrer une latitude et une longitude ou bien juste \"here\"", color=RED)
+    elif isinstance(lat, str) and lon == None:
+        user = ctx.message.author.id
+        if user in coordsUsers:
+            if lat in coordsUsers[user]:
+                name = lat
+                lat = coordsUsers[user][name][0]
+                lon = coordsUsers[user][name][1]
+    embedErr = discord.Embed(title="Oops :/", description="Latitude et longitude doivent être des coordonnées, \"here\" ou encore un nom de coordonnées que vous avez enregistrées", color=RED)
+    if lat == None or lon == None:
+        embed = embedErr
         await ctx.send(embed = embed)
         return
     lat = float(lat)
     lon = float(lon)
     if not isinstance(lat, float) or not isinstance(lon, float):
-        embed = discord.Embed(title="Oops :/", description="Latitude et longitude doivent être des coordonnées ou bien juste \"here\"", color=RED)
+        embed = embedErr
         await ctx.send(embed = embed)
         return
     embed = discord.Embed(title="Liste des stations les plus proches", color=BLUE)
@@ -332,7 +411,6 @@ async def update(ctx):
     embed.add_field(name="Nombre de velovs parkés", value=str(totalVelovs(listeData)), inline=False)
     embed.add_field(name="Nombre de places disponibles", value=str(totalPlaces(listeData)), inline=False)
     embed.add_field(name="Nombre de favoris", value=str(len(favorite)), inline=False)
-    
     await ctx.send(embed = embed)
 
 # Bot run
